@@ -7,9 +7,16 @@ from PySide6.QtWidgets import QApplication
 from .ui import TunerWindow
 
 
+ORGANIZATION_NAME = "BlackMamba RECORDS"
+ORGANIZATION_DOMAIN = "blackmamba.records"
+APPLICATION_NAME = "BlackMamba Tuner"
+
+
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("BlackMamba Tuner")
+    app.setOrganizationName(ORGANIZATION_NAME)
+    app.setOrganizationDomain(ORGANIZATION_DOMAIN)
+    app.setApplicationName(APPLICATION_NAME)
 
     window = TunerWindow()
     window.show()

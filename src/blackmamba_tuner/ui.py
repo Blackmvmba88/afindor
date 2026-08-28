@@ -64,20 +64,24 @@ class PitchWorker(QThread):
         super().__init__()
         self.audio = audio
         self.engine = engine
-        self._running = True
 
     def run(self) -> None:
-        while self._running:
+        while not self.isInterruptionRequested():
             try:
                 result = self.engine.detect(self.audio.snapshot(), self.audio.sample_rate)
                 self.detected.emit(result)
             except Exception as exc:  # keep the audio/UI alive and surface the problem
                 self.failed.emit(str(exc))
+
+            if self.isInterruptionRequested():
+                break
             self.msleep(45)
 
     def stop(self) -> None:
-        self._running = False
-        self.wait(1_000)
+        # Never let Python/Qt destroy a live QThread. The first librosa/Numba
+        # analysis can take longer than a fixed timeout while JIT warms up.
+        self.requestInterruption()
+        self.wait()
 
 
 class TunerWindow(QMainWindow):
@@ -155,9 +159,11 @@ class TunerWindow(QMainWindow):
         self.toggle_button.setText("Stop tuner")
 
     def stop_tuner(self) -> None:
-        if self.worker is not None:
-            self.worker.stop()
+        worker = self.worker
+        if worker is not None:
+            worker.stop()
             self.worker = None
+
         self.audio.stop()
         self._cents_history.clear()
         self.status_label.setText("Stopped")

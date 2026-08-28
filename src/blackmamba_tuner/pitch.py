@@ -20,17 +20,29 @@ class PitchEngine(Protocol):
 
 
 class LibrosaPyinEngine:
-    """Pitch detector backed by librosa's probabilistic YIN implementation."""
+    """Low-latency pitch detector backed by librosa's probabilistic YIN.
+
+    The defaults are tuned for guitar-range fundamentals while remaining
+    chromatic. A 2048-sample analysis frame keeps enough cycles of low E2 for a
+    stable estimate without making every UI update chew through an 8k frame.
+    """
 
     def __init__(
         self,
         fmin: float = 60.0,
         fmax: float = 1_200.0,
-        frame_length: int = 4_096,
-        hop_length: int = 512,
+        frame_length: int = 2_048,
+        hop_length: int = 256,
         min_rms: float = 0.0025,
         min_confidence: float = 0.55,
     ) -> None:
+        if fmin <= 0 or fmax <= fmin:
+            raise ValueError("pitch range must satisfy 0 < fmin < fmax")
+        if frame_length <= 0 or hop_length <= 0:
+            raise ValueError("frame_length and hop_length must be positive")
+        if hop_length > frame_length:
+            raise ValueError("hop_length must be <= frame_length")
+
         self.fmin = fmin
         self.fmax = fmax
         self.frame_length = frame_length
@@ -39,6 +51,10 @@ class LibrosaPyinEngine:
         self.min_confidence = min_confidence
 
     def detect(self, samples: np.ndarray, sample_rate: int) -> PitchResult:
+        if sample_rate <= 0:
+            raise ValueError("sample_rate must be positive")
+        if self.fmax >= sample_rate / 2:
+            raise ValueError("fmax must be below the Nyquist frequency")
         if samples.size < self.frame_length:
             return PitchResult(None, 0.0, 0.0, False)
 
@@ -48,9 +64,10 @@ class LibrosaPyinEngine:
         if rms < self.min_rms:
             return PitchResult(None, 0.0, rms, False)
 
-        # Work on a bounded recent window so latency/CPU usage stay predictable.
+        # Bound work to two recent frames. This preserves low-note stability
+        # while making latency and CPU use predictable on realtime input.
         analysis_size = min(y.size, self.frame_length * 2)
-        y = y[-analysis_size:]
+        y = np.ascontiguousarray(y[-analysis_size:])
 
         f0, voiced_flag, voiced_prob = librosa.pyin(
             y,
@@ -76,6 +93,5 @@ class LibrosaPyinEngine:
         if confidence < self.min_confidence:
             return PitchResult(None, confidence, rms, False)
 
-        # Probability-weighted mean is less jumpy than taking a single frame.
         frequency = float(np.average(frequencies, weights=np.maximum(probabilities, 1e-6)))
         return PitchResult(frequency, confidence, rms, True)

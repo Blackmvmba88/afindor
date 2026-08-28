@@ -20,19 +20,20 @@ class PitchEngine(Protocol):
 
 
 class LibrosaPyinEngine:
-    """Low-latency pitch detector backed by librosa's probabilistic YIN.
+    """Realtime pitch detector backed by librosa's probabilistic YIN.
 
-    The defaults are tuned for guitar-range fundamentals while remaining
-    chromatic. A 2048-sample analysis frame keeps enough cycles of low E2 for a
-    stable estimate without making every UI update chew through an 8k frame.
+    The defaults are tuned for chromatic guitar work. A 4096-sample frame is
+    intentional: smaller frames are faster but materially reduce pYIN confidence
+    around low E2/A2. We bound analysis to two recent frames so CPU and latency
+    remain predictable without sacrificing the low strings.
     """
 
     def __init__(
         self,
         fmin: float = 60.0,
         fmax: float = 1_200.0,
-        frame_length: int = 2_048,
-        hop_length: int = 256,
+        frame_length: int = 4_096,
+        hop_length: int = 512,
         min_rms: float = 0.0025,
         min_confidence: float = 0.55,
     ) -> None:
@@ -64,8 +65,6 @@ class LibrosaPyinEngine:
         if rms < self.min_rms:
             return PitchResult(None, 0.0, rms, False)
 
-        # Bound work to two recent frames. This preserves low-note stability
-        # while making latency and CPU use predictable on realtime input.
         analysis_size = min(y.size, self.frame_length * 2)
         y = np.ascontiguousarray(y[-analysis_size:])
 

@@ -92,5 +92,8 @@ class LibrosaPyinEngine:
         if confidence < self.min_confidence:
             return PitchResult(None, confidence, rms, False)
 
-        frequency = float(np.average(frequencies, weights=np.maximum(probabilities, 1e-6)))
+        # A median is deliberately used instead of a mean here. Plucked-string
+        # attacks can produce a few high frames from upper harmonics; the median
+        # keeps those frames from pulling the final tuning reading sharp.
+        frequency = float(np.median(frequencies))
         return PitchResult(frequency, confidence, rms, True)

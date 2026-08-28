@@ -39,6 +39,7 @@ La captura, el detector de pitch, la lógica musical y la apariencia están desa
 - Ciclo de vida de audio idempotente: `Start/Stop` repetible sin dejar streams abiertos.
 - Detección probabilística con `librosa.pyin`.
 - Frame DSP de 4096 muestras para conservar confianza en las cuerdas graves.
+- Agregación robusta por mediana para evitar que ataques/armónicos jalen la lectura.
 - Confidence gating para rechazar señal poco fiable.
 - Conversión cromática a nota, octava y frecuencia objetivo.
 - Desviación de afinación en cents.
@@ -49,7 +50,8 @@ La captura, el detector de pitch, la lógica musical y la apariencia están desa
 - Temas persistentes: `Mamba Gold`, `Venom`, `Crimson` y `Midnight`.
 - Preferencias nativas mediante `QSettings`.
 - Tests para lógica musical, ring buffer, configuración DSP y temas.
-- CI que instala el proyecto real antes de ejecutar `pytest` y `ruff`.
+- Validador sintético reproducible para las seis cuerdas estándar.
+- CI que instala el proyecto real antes de ejecutar `pytest`, validación DSP y `ruff`.
 
 ## Instalación
 
@@ -92,8 +94,11 @@ Mientras se ejecuta desde Terminal, macOS puede asociar el permiso de captura al
 
 ```bash
 pytest -q
-ruff check src tests
+python scripts/validate_dsp.py
+ruff check src tests scripts
 ```
+
+`validate_dsp.py` no usa micrófono: genera señales deterministas con fundamental + armónicos para E2, A2, D3, G3, B3 y E4. Falla si una cuerda queda fuera de ±5 cents o por debajo del umbral de confianza.
 
 ## Siguiente fase
 

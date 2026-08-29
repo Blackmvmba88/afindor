@@ -51,6 +51,30 @@ class LibrosaPyinEngine:
         self.min_rms = min_rms
         self.min_confidence = min_confidence
 
+    @staticmethod
+    def _select_observed_frequency(frequencies: np.ndarray) -> float:
+        """Pick a stable observed pitch without averaging across note changes.
+
+        pYIN can return frames from two strings while the analysis window spans a
+        transition. A raw median of an even split would average the two middle
+        values and create a frequency that was never observed. We instead choose
+        the dominant chromatic-note cluster, prefer the most recent cluster on a
+        tie, then choose an observed frame nearest that cluster's median.
+        """
+        midi_bins = np.rint(69.0 + 12.0 * np.log2(frequencies / 440.0)).astype(np.int16)
+        unique_bins, counts = np.unique(midi_bins, return_counts=True)
+        max_count = int(np.max(counts))
+        candidate_bins = set(int(value) for value in unique_bins[counts == max_count])
+
+        selected_bin = next(
+            int(value) for value in reversed(midi_bins) if int(value) in candidate_bins
+        )
+        cluster = frequencies[midi_bins == selected_bin]
+        cluster_median = float(np.median(cluster))
+        distances = np.abs(cluster - cluster_median)
+        nearest = np.flatnonzero(np.isclose(distances, np.min(distances), rtol=0.0, atol=1e-12))
+        return float(cluster[int(nearest[-1])])
+
     def detect(self, samples: np.ndarray, sample_rate: int) -> PitchResult:
         if sample_rate <= 0:
             raise ValueError("sample_rate must be positive")
@@ -92,8 +116,5 @@ class LibrosaPyinEngine:
         if confidence < self.min_confidence:
             return PitchResult(None, confidence, rms, False)
 
-        # A median is deliberately used instead of a mean here. Plucked-string
-        # attacks can produce a few high frames from upper harmonics; the median
-        # keeps those frames from pulling the final tuning reading sharp.
-        frequency = float(np.median(frequencies))
+        frequency = self._select_observed_frequency(frequencies)
         return PitchResult(frequency, confidence, rms, True)

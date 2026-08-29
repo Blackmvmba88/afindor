@@ -78,8 +78,12 @@ class PitchWorker(QThread):
         while not self.isInterruptionRequested():
             try:
                 result = self.engine.detect(self.audio.snapshot(), self.audio.sample_rate)
+                if self.isInterruptionRequested():
+                    break
                 self.detected.emit(result)
             except Exception as exc:  # keep audio/UI alive and surface the problem
+                if self.isInterruptionRequested():
+                    break
                 self.failed.emit(str(exc))
 
             if self.isInterruptionRequested():
@@ -105,6 +109,7 @@ class TunerWindow(QMainWindow):
         self.engine = LibrosaPyinEngine()
         self.worker: PitchWorker | None = None
         self._cents_history: deque[float] = deque(maxlen=5)
+        self._last_midi: int | None = None
 
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -224,14 +229,20 @@ class TunerWindow(QMainWindow):
 
         self.audio.stop()
         self._cents_history.clear()
+        self._last_midi = None
         self.confidence.setValue(0)
         self.status_label.setText("Stopped")
         self.toggle_button.setText("Start tuner")
 
     def _on_worker_error(self, message: str) -> None:
+        if self.worker is None:
+            return
         self.status_label.setText(f"DSP error: {message}")
 
     def on_pitch(self, result: PitchResult) -> None:
+        if self.worker is None:
+            return
+
         self.confidence.setValue(round(result.confidence * 100))
 
         if not result.voiced or result.frequency_hz is None:
@@ -239,6 +250,10 @@ class TunerWindow(QMainWindow):
             return
 
         reading = frequency_to_note(result.frequency_hz)
+        if reading.midi != self._last_midi:
+            self._cents_history.clear()
+            self._last_midi = reading.midi
+
         self._cents_history.append(reading.cents)
         smoothed_cents = float(np.median(self._cents_history))
 

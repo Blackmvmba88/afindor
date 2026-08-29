@@ -49,3 +49,25 @@ def test_silence_is_not_reported_as_a_note() -> None:
     assert result.voiced is False
     assert result.frequency_hz is None
     assert result.confidence == 0.0
+
+
+def test_pitch_transition_selects_an_observed_frequency(monkeypatch) -> None:
+    observed = np.array([82.0, 82.2, 110.0, 110.2], dtype=np.float64)
+
+    def fake_pyin(*args, **kwargs):
+        del args, kwargs
+        return (
+            observed,
+            np.ones(observed.size, dtype=bool),
+            np.full(observed.size, 0.9, dtype=np.float64),
+        )
+
+    monkeypatch.setattr("blackmamba_tuner.pitch.librosa.pyin", fake_pyin)
+    engine = LibrosaPyinEngine(frame_length=4, hop_length=1, min_rms=0.0)
+    samples = np.array([1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0], dtype=np.float32)
+
+    result = engine.detect(samples, 44_100)
+
+    assert result.voiced is True
+    assert result.frequency_hz in observed
+    assert result.frequency_hz >= 110.0
